@@ -39,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -360,11 +360,22 @@ def _to_float(text):
 
 
 def parse_binary(text):
-    hits = re.findall(r"Probability\s*:\s*(" + _NUM + r")\s*%", text, re.I)
+    # The prompt asks the model to "End with one line exactly like: Probability: NN%",
+    # but frontier models often drop the % or give a bare fraction (e.g.
+    # "Probability: 73" or "Probability: 0.73"). The old pattern required a literal
+    # "%", so those answers returned None and that run was silently discarded from
+    # the ensemble -- the same silent-drop failure that v0.1.4 fixed for multiple
+    # choice. Make the "%" optional (like parse_multiple_choice) and read the value:
+    # an explicit "%" or any value above 1 is a percentage (divide by 100); a bare
+    # value in [0, 1] is already a probability.
+    hits = re.findall(r"Probability\s*:\s*(" + _NUM + r")\s*(%?)", text, re.I)
     if not hits:
         return None
-    p = _to_float(hits[-1]) / 100.0
-    return p if 0.0 <= p <= 1.0 else None
+    raw, pct = hits[-1]
+    v = _to_float(raw)
+    if pct or v > 1.0:
+        v = v / 100.0
+    return v if 0.0 <= v <= 1.0 else None
 
 
 def parse_multiple_choice(text, options):

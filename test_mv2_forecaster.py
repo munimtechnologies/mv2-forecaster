@@ -34,6 +34,23 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(mf.parse_binary("a 5% base rate, no final line"))
         self.assertIsNone(mf.parse_binary("Probability: 140%"))
 
+    def test_binary_percent_optional(self):
+        # The prompt asks for "Probability: NN%", but frontier models often drop
+        # the % or answer with a bare fraction; v0.1.4 and earlier required a
+        # literal % and silently discarded those runs from the ensemble -- the
+        # same silent-drop bug v0.1.4 fixed for multiple choice. An explicit % or
+        # a value above 1 is a percentage; a bare value in [0, 1] is already a
+        # probability.
+        self.assertAlmostEqual(mf.parse_binary("Probability: 73"), 0.73)       # dropped %
+        self.assertAlmostEqual(mf.parse_binary("Probability: 0.73"), 0.73)     # bare fraction
+        self.assertAlmostEqual(mf.parse_binary("Final answer\nProbability: 8 percent"), 0.08)
+        self.assertAlmostEqual(mf.parse_binary("Probability: 100"), 1.0)
+        self.assertAlmostEqual(mf.parse_binary("Probability: 0"), 0.0)
+        # an explicit % still wins and the last line is taken
+        self.assertAlmostEqual(mf.parse_binary("Probability: 5\n...\nProbability: 42%"), 0.42)
+        # a bare value above 100 is still out of range -> None
+        self.assertIsNone(mf.parse_binary("Probability: 173"))
+
     def test_multiple_choice(self):
         text = "Thinking...\n**Yes**: 50%\nYes, partially: 30%\nNo: 20%"
         got = mf.parse_multiple_choice(text, ["Yes", "Yes, partially", "No"])
