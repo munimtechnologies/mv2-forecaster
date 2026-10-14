@@ -47,7 +47,7 @@ MINIBENCH_ID = "minibench"
 BOT_TESTING_AREA_ID = "bot-testing-area"
 DEFAULT_TOURNAMENTS = [str(FALL_2026_FUTUREEVAL_ID), MINIBENCH_ID]
 FORECAST_TYPES = ["binary", "multiple_choice", "numeric", "discrete"]
-USER_AGENT = f"mv2-forecaster/{__version__} (+https://github.com/munimv2/mv2-forecaster)"
+USER_AGENT = f"mv2-forecaster/{__version__} (+https://github.com/munimtechnologies/mv2-forecaster)"
 
 BINARY_FLOOR, BINARY_CEIL = 0.02, 0.98
 MC_FLOOR = 0.01
@@ -585,7 +585,7 @@ def forecast_question(q, models, research_model, cfg, llm=llm_chat, markets_fn=m
 
     comment = (f"MV2 forecaster {__version__}, an open-source bot by MV2 of Munim, Inc. "
                f"This forecast was made entirely by AI, with no human in the loop. "
-               f"Code: https://github.com/munimv2/mv2-forecaster\n\n"
+               f"Code: https://github.com/munimtechnologies/mv2-forecaster\n\n"
                f"Aggregate: {shown}\nRuns: {each}\n\n"
                f"Research summary:\n{research[:2500] or 'none'}\n\n"
                f"Reasoning from {rationales[0][0]}:\n{rationales[0][1][:4000]}")
