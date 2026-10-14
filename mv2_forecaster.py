@@ -39,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -404,8 +404,19 @@ def parse_multiple_choice(text, options):
 
 
 def parse_percentiles(text):
+    # The prompt asks for lines like "Percentile 50: 1200", but frontier models very
+    # often bold the final answer block -- "**Percentile 50:** 1200" (colon inside the
+    # bold) or "Percentile 50: **1200**" (only the number bolded). The old pattern
+    # required a bare colon and number, so every bolded line was skipped and the whole
+    # numeric/discrete forecast was dropped once fewer than three percentiles survived
+    # -- the numeric twin of the binary (v0.1.5/0.1.6) and multiple-choice (v0.1.4)
+    # silent-drop fixes. Tolerate markdown emphasis (* _ ~ `) around the index, colon
+    # and number (v0.1.7); the pattern is a strict superset of the old one, and _NUM
+    # excludes letters so prose is still not matched.
     found = {}
-    for p, v in re.findall(r"Percentile\s*(\d+)\s*:\s*\$?(" + _NUM + r")", text, re.I):
+    pat = (r"Percentile" + _PROB_PAD + r"(\d+)" + _PROB_PAD + r":"
+           + _PROB_PAD + r"\$?(" + _NUM + r")")
+    for p, v in re.findall(pat, text, re.I):
         if 0 < int(p) < 100:
             found[int(p)] = _to_float(v)
     return found if len(found) >= 3 else None

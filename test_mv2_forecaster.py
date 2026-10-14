@@ -101,6 +101,23 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(got, {10: 1200.0, 50: 3500.5, 90: 10000.0})
         self.assertIsNone(mf.parse_percentiles("Percentile 10: 1"))
 
+    def test_percentiles_emphasis(self):
+        # Frontier models very often bold the final answer block, e.g.
+        # "**Percentile 50:** 1200" (colon inside the bold) or
+        # "Percentile 50: **1200**" (only the number bolded). Before v0.1.7 the
+        # pattern required a bare colon and number, so every bolded line was
+        # skipped and the whole numeric/discrete forecast was dropped once fewer
+        # than three percentiles survived -- the numeric twin of the binary
+        # (v0.1.5/0.1.6) and multiple-choice (v0.1.4) silent-drop fixes.
+        bold_colon = "**Percentile 10:** 1200\n**Percentile 50:** 3500\n**Percentile 90:** 9000"
+        self.assertEqual(mf.parse_percentiles(bold_colon), {10: 1200.0, 50: 3500.0, 90: 9000.0})
+        bold_number = "Percentile 10: **1200**\nPercentile 50: **3500**\nPercentile 90: **9000**"
+        self.assertEqual(mf.parse_percentiles(bold_number), {10: 1200.0, 50: 3500.0, 90: 9000.0})
+        bold_dollar = "- **Percentile 10:** $1,200\n- **Percentile 50:** $3,500\n- **Percentile 90:** $9,000"
+        self.assertEqual(mf.parse_percentiles(bold_dollar), {10: 1200.0, 50: 3500.0, 90: 9000.0})
+        # emphasis does not turn prose into a match: no numeric value follows.
+        self.assertIsNone(mf.parse_percentiles("**Percentile estimates below:**\nsee the table"))
+
 
 class AggregateTests(unittest.TestCase):
     def test_binary_log_odds(self):
