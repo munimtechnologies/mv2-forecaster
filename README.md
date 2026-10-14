@@ -36,6 +36,15 @@ For each open question in the tournament that the bot account hasn't forecast ye
 - The only outside forecasts it uses are public ones (Manifold).
 - AI-made work is disclosed: each forecast's comment states plainly that the forecast was made by AI with no human in the loop, and links here.
 
+## Other venues
+
+The same code can forecast any Metaculus contest that welcomes bot accounts — just add its slug to `TOURNAMENTS`; no code change is needed. Two recurring ones worth entering with this account:
+
+- **ACX / Metaculus Prediction Contest** — the annual [Astral Codex Ten](https://www.astralcodexten.com) × Metaculus contest (~$10,000 pool, ~36 reader-submitted questions, bot accounts explicitly welcome). Each edition is scored from a single **snapshot of standing forecasts in mid-January**, so it should be entered close to that date rather than months ahead. The 2026 edition (slug `ACX2026`) snapshotted on 2026-01-17; the next edition is expected around January 2027.
+- **Bridgewater × Metaculus** — an annual accuracy competition (the recent edition ran ~January–March with a $30,000 pool). Check its published contest rules for bot eligibility before entering.
+
+Metaculus uses a **spot peer score** — only each account's last forecast before a question closes counts — so for a snapshot-scored contest the bot should be pointed at it near the deadline, so its standing forecast is fresh rather than months old.
+
 ## Run it
 
 ```
@@ -52,7 +61,7 @@ Standard library only (Python 3.10+). Environment variables:
 | `FORECAST_MODELS` | Comma-separated model ids. If unset, the newest frontier model per provider is used (Opus, flagship GPT, Gemini Pro). Set this to cap cost if the free LLM credits run low |
 | `RESEARCH_MODEL` | Defaults to the first forecast model |
 | `RUNS_PER_MODEL` | Default 2 |
-| `TOURNAMENTS` | Default `33121,minibench` |
+| `TOURNAMENTS` | Comma-separated tournament ids or slugs. Default `33121,minibench`. Can include other bot-welcoming contests (see [Other venues](#other-venues)) |
 
 Without a token and a key, the bot prints a note and exits 0.
 
