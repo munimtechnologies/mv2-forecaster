@@ -44,6 +44,25 @@ class ParseTests(unittest.TestCase):
         self.assertAlmostEqual(normalized["A"], 0.5)
         self.assertIsNone(mf.parse_multiple_choice("A: 50%", ["A", "B"]))
 
+    def test_multiple_choice_list_formatting(self):
+        # Formats a forecasting LLM commonly emits that v0.1.3 silently dropped
+        # (returned None, losing the whole answer): a numbered list and a colon
+        # placed inside the bold markers. Also keep bullets and indentation.
+        opts = ["Option A", "Option B"]
+        for label, text in (
+            ("numbered", "1. Option A: 30%\n2. Option B: 70%"),
+            ("number_paren", "1) Option A: 30%\n2) Option B: 70%"),
+            ("bold_colon_inside", "**Option A:** 30%\n**Option B:** 70%"),
+            ("bold_number", "1. **Option A**: 30%\n2. **Option B**: 70%"),
+            ("dash_bullet", "- Option A: 30%\n- Option B: 70%"),
+            ("indented", "   Option A: 30%\n   Option B: 70%"),
+        ):
+            got = mf.parse_multiple_choice(text, opts)
+            self.assertIsNotNone(got, label)
+            self.assertAlmostEqual(got["Option A"], 0.3, places=6, msg=label)
+            self.assertAlmostEqual(got["Option B"], 0.7, places=6, msg=label)
+            self.assertAlmostEqual(sum(got.values()), 1.0, places=6, msg=label)
+
     def test_percentiles(self):
         got = mf.parse_percentiles("Percentile 10: 1,200\nPercentile 50: $3,500.5\npercentile 90: 1e4")
         self.assertEqual(got, {10: 1200.0, 50: 3500.5, 90: 10000.0})

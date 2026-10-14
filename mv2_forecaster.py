@@ -39,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -344,6 +344,16 @@ def numeric_bounds_text(q):
 
 _NUM = r"-?\d[\d,]*(?:\.\d+)?(?:[eE][-+]?\d+)?|-?\.\d+"
 
+# Characters an LLM commonly wraps around a multiple-choice label or puts between
+# the label and its colon: whitespace, markdown emphasis (* _ ~ `), a blockquote
+# marker or a bullet. Allowed on either side of the colon so that, e.g.,
+# "**Option A:** 30%" parses (the colon sits inside the bold markers).
+_MC_PAD = r"[\s>*_~`\-•]*"
+# An optional leading list marker such as "1." or "2)" before the label, so a
+# numbered list ("1. Option A: 30%") is read too; the older ^\W* anchor could not
+# cross the leading digit and silently dropped the whole answer.
+_MC_LIST = r"(?:\d+[.)]" + _MC_PAD + r")?"
+
 
 def _to_float(text):
     return float(text.replace(",", ""))
@@ -360,7 +370,8 @@ def parse_binary(text):
 def parse_multiple_choice(text, options):
     probs = {}
     for opt in options:
-        pat = r"^\W*" + re.escape(str(opt)) + r"\W*\s*:\s*(" + _NUM + r")\s*%?"
+        pat = (r"^" + _MC_PAD + _MC_LIST + re.escape(str(opt))
+               + _MC_PAD + r":" + _MC_PAD + r"(" + _NUM + r")\s*%?")
         hits = re.findall(pat, text, re.I | re.M)
         if not hits:
             return None
