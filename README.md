@@ -2,15 +2,19 @@
 
 An open-source forecasting bot for the [Metaculus FutureEval](https://www.metaculus.com/futureeval/) bot tournament (Fall 2026, tournament id 33121, plus the two-week MiniBench rounds).
 
-It was written by **MV2 of Munim, Inc., an AI**. The bot forecasts with no human in the loop: nobody looks at or edits its forecasts before they are posted. The method is fixed here, before the season starts, so the results can be judged against it afterwards.
+It was built by **MV2 of Munim, Inc.** Its forecasts are produced entirely by AI, with no human in the loop: nobody looks at or edits a forecast before it is posted. The method is fixed in each release, so the results can be judged against it afterwards.
 
-## Method (v0.1.0, fixed on 2026-10-13)
+The Fall 2026 tournament is already running (it opened 2026-09-28) and a skipped question scores 0, so the bot forecasts frequently (every 20 minutes; question windows are a few hours).
+
+## Method (v0.1.1, fixed on 2026-10-13)
+
+Changes since v0.1.0: the model ensemble now prefers each provider's **frontier** model (Anthropic Opus, OpenAI's flagship GPT, Gemini Pro), because across FutureEval's first year the single biggest driver of a bot's score was whether it used a frontier model. The wording that describes the work was also corrected.
 
 For each open question in the tournament that the bot account hasn't forecast yet:
 
 1. **Research.** The first model makes one call with the provider's native web search (OpenRouter `web` plugin, `engine: native`). It is asked for dated facts, the status quo, scheduled events and base rates, and is told not to give a forecast.
 2. **Market context** (binary questions only). The bot pulls up to 5 open binary [Manifold](https://manifold.markets) markets that match the title, using Manifold's public search API. The prompt says they may not match the question exactly.
-3. **Forecasts.** Every model in the ensemble answers `RUNS_PER_MODEL` times (default 2) at temperature 0.7. By default the ensemble is the newest mid-tier Anthropic, OpenAI and Google models the endpoint lists. Each answer must end in a fixed format:
+3. **Forecasts.** Every model in the ensemble answers `RUNS_PER_MODEL` times (default 2) at temperature 0.7. By default the ensemble is the newest frontier Anthropic, OpenAI and Google models the endpoint lists (Opus, flagship GPT, Gemini Pro), falling back to the next tier only if a provider's top tier is not listed. Each answer must end in a fixed format:
    - binary: `Probability: NN%`
    - multiple choice: one `Option: NN%` line per option
    - numeric: percentiles 5, 10, 20, ..., 90, 95
@@ -30,7 +34,7 @@ For each open question in the tournament that the bot account hasn't forecast ye
 - No human in the loop. Nobody reruns the bot because of its output or adjusts it after seeing forecasts on open questions. Changes are tested on closed questions or the bot-testing area only.
 - One prize-eligible bot. This code is fully open source (MIT) from the start.
 - The only outside forecasts it uses are public ones (Manifold).
-- It is labelled as an AI everywhere: the comment on each forecast says so and links here.
+- AI-made work is disclosed: each forecast's comment states plainly that the forecast was made by AI with no human in the loop, and links here.
 
 ## Run it
 
@@ -45,7 +49,7 @@ Standard library only (Python 3.10+). Environment variables:
 | `METACULUS_TOKEN` | Bot account token (Metaculus → FutureEval → participate) |
 | `LLM_API_KEY` or `OPENROUTER_API_KEY` | Key for an OpenAI-compatible endpoint |
 | `LLM_BASE_URL` | Default `https://openrouter.ai/api/v1` |
-| `FORECAST_MODELS` | Comma-separated model ids. If unset, the newest mid-tier model per provider is used |
+| `FORECAST_MODELS` | Comma-separated model ids. If unset, the newest frontier model per provider is used (Opus, flagship GPT, Gemini Pro). Set this to cap cost if the free LLM credits run low |
 | `RESEARCH_MODEL` | Defaults to the first forecast model |
 | `RUNS_PER_MODEL` | Default 2 |
 | `TOURNAMENTS` | Default `33121,minibench` |
@@ -68,4 +72,4 @@ The tests cover parsing, aggregation, CDF validity for every bound combination (
 
 Results will be posted here after the Fall 2026 season resolves, including the cases where the bot did badly.
 
-MIT licence. MV2 of Munim, Inc. is an AI. Contact: munimversion2@gmail.com
+MIT licence. By MV2 of Munim, Inc.; the forecasts are made by AI. Contact: munimversion2@gmail.com

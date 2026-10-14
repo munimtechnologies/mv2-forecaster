@@ -1,5 +1,6 @@
 """MV2 forecaster: an open-source forecasting bot for the Metaculus FutureEval
-bot tournament, by MV2 of Munim, Inc. (an AI).
+bot tournament, by MV2 of Munim, Inc. Its forecasts are produced entirely by
+AI, with no human in the loop.
 
 Pipeline per question:
   1. research: one LLM call with the provider's native web search;
@@ -13,8 +14,8 @@ Standard library only. Configuration is by environment variable:
   METACULUS_TOKEN   bot account token (required to post)
   LLM_API_KEY       key for the OpenAI-compatible endpoint (OPENROUTER_API_KEY also read)
   LLM_BASE_URL      default https://openrouter.ai/api/v1
-  FORECAST_MODELS   comma-separated model ids; default: newest Anthropic/OpenAI/Google
-                    mid-tier models listed by the endpoint's /models
+  FORECAST_MODELS   comma-separated model ids; default: newest frontier
+                    Anthropic/OpenAI/Google models listed by the endpoint's /models
   RESEARCH_MODEL    model used for research; default: first forecast model
   RUNS_PER_MODEL    default 2
   TOURNAMENTS       comma-separated ids or slugs; default 33121,minibench
@@ -31,7 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -136,33 +137,46 @@ def llm_chat(model, prompt, base_url, api_key, temperature=0.4, web=False, timeo
     return resp["choices"][0]["message"]["content"] or ""
 
 
+# Across FutureEval's first year the single biggest driver of a bot's score was
+# whether it used a frontier model (Metaculus pros-vs-bots write-ups, 2026), so
+# each provider's top tier is preferred, falling back to the next tier only if
+# the endpoint does not list it. Tiers are tried in order; the newest id wins.
 _TIER_RULES = [
-    ("anthropic/claude-", ("sonnet",), ()),
-    ("openai/gpt-", (), ("mini", "nano", "oss", "image", "audio", "codex", "chat", "search", "realtime")),
-    ("google/gemini-", ("pro",), ("image", "tts", "lite", "exp")),
+    ("anthropic/claude-", [("opus",), ("sonnet",)], ("haiku",)),
+    ("openai/gpt-", [()], ("mini", "nano", "oss", "pro", "image", "audio", "codex", "chat", "search", "realtime")),
+    ("google/gemini-", [("pro",)], ("flash", "image", "tts", "lite", "exp")),
 ]
 
 
 def pick_models(models_json):
-    """Newest mid-tier model per provider from an OpenRouter-style /models list."""
+    """Newest frontier model per provider from an OpenRouter-style /models list.
+
+    For each provider the preference tiers are tried in order; the first tier
+    with any match supplies the newest matching id.
+    """
     rows = models_json.get("data") or []
     picked = []
-    for prefix, must, banned in _TIER_RULES:
-        best = None
-        for row in rows:
-            mid = str(row.get("id", ""))
-            low = mid.lower()
-            if not low.startswith(prefix) or ":" in low or "[" in low:
-                continue
-            if must and not any(m in low for m in must):
-                continue
-            if any(b in low for b in banned):
-                continue
-            created = row.get("created") or 0
-            if best is None or created > best[0]:
-                best = (created, mid)
-        if best:
-            picked.append(best[1])
+    for prefix, pref_tiers, banned in _TIER_RULES:
+        chosen = None
+        for tier in pref_tiers:
+            best = None
+            for row in rows:
+                mid = str(row.get("id", ""))
+                low = mid.lower()
+                if not low.startswith(prefix) or ":" in low or "[" in low:
+                    continue
+                if tier and not any(m in low for m in tier):
+                    continue
+                if any(b in low for b in banned):
+                    continue
+                created = row.get("created") or 0
+                if best is None or created > best[0]:
+                    best = (created, mid)
+            if best:
+                chosen = best[1]
+                break
+        if chosen:
+            picked.append(chosen)
     return picked
 
 
@@ -500,8 +514,9 @@ def forecast_question(q, models, research_model, cfg, llm=llm_chat, markets_fn=m
         shown = "median ~ " + median_text(final, q)
         each = f"{len(parsed)} runs"
 
-    comment = (f"MV2 forecaster {__version__}, a bot by MV2 of Munim, Inc. (an AI). "
-               f"No human in the loop. Code: https://github.com/munimv2/mv2-forecaster\n\n"
+    comment = (f"MV2 forecaster {__version__}, an open-source bot by MV2 of Munim, Inc. "
+               f"This forecast was made entirely by AI, with no human in the loop. "
+               f"Code: https://github.com/munimv2/mv2-forecaster\n\n"
                f"Aggregate: {shown}\nRuns: {each}\n\n"
                f"Research summary:\n{research[:2500] or 'none'}\n\n"
                f"Reasoning from {rationales[0][0]}:\n{rationales[0][1][:4000]}")

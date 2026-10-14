@@ -147,14 +147,25 @@ class ApiShapeTests(unittest.TestCase):
             {"id": "anthropic/claude-opus-5", "created": 30},
             {"id": "openai/gpt-6", "created": 25},
             {"id": "openai/gpt-6-mini", "created": 40},
+            {"id": "openai/gpt-6-pro", "created": 45},
             {"id": "openai/gpt-7:free", "created": 50},
             {"id": "google/gemini-3-pro", "created": 5},
+            {"id": "google/gemini-3-flash", "created": 40},
             {"id": "google/gemini-3-pro-image", "created": 9},
             {"id": "meta/llama-5", "created": 99},
         ]}
+        # Anthropic prefers the frontier opus tier; OpenAI takes the newest plain
+        # flagship (not -mini or the pricey -pro); Google takes pro, not flash.
         self.assertEqual(mf.pick_models(listing),
-                         ["anthropic/claude-sonnet-5", "openai/gpt-6", "google/gemini-3-pro"])
+                         ["anthropic/claude-opus-5", "openai/gpt-6", "google/gemini-3-pro"])
         self.assertEqual(mf.pick_models({}), [])
+
+    def test_pick_models_falls_back_to_sonnet(self):
+        listing = {"data": [
+            {"id": "anthropic/claude-sonnet-5", "created": 20},
+            {"id": "anthropic/claude-haiku-5", "created": 30},
+        ]}
+        self.assertEqual(mf.pick_models(listing), ["anthropic/claude-sonnet-5"])
 
 
 def fake_llm(replies):
@@ -173,8 +184,8 @@ class ForecastQuestionTests(unittest.TestCase):
         llm = fake_llm({"a": "Probability: 30%", "b": "Probability: 50%"})
         value, comment, record = mf.forecast_question(q, ["a", "b"], "a", self.cfg, llm, lambda t: [])
         self.assertAlmostEqual(value, 0.3956, places=3)
-        self.assertIn("an AI", comment)
-        self.assertIn("No human in the loop", comment)
+        self.assertIn("made entirely by AI", comment)
+        self.assertIn("no human in the loop", comment)
         self.assertEqual(len(record["runs"]), 2)
 
     def test_multiple_choice(self):
