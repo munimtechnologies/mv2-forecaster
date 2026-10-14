@@ -39,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -353,6 +353,13 @@ _MC_PAD = r"[\s>*_~`\-•]*"
 # numbered list ("1. Option A: 30%") is read too; the older ^\W* anchor could not
 # cross the leading digit and silently dropped the whole answer.
 _MC_LIST = r"(?:\d+[.)]" + _MC_PAD + r")?"
+# Whitespace and markdown emphasis (* _ ~ `) an LLM commonly wraps around the
+# binary answer line, e.g. "**Probability:** 73%" (colon inside the bold) or
+# "Probability: **73%**" (only the number bolded). Allowed around the colon and
+# before the number so those are read, not silently dropped -- the binary twin of
+# the emphasis tolerance _MC_PAD already gives multiple choice. Letters are not in
+# the class, so prose like "Probability of rain: 73%" still does not match.
+_PROB_PAD = r"[\s*_~`]*"
 
 
 def _to_float(text):
@@ -362,13 +369,16 @@ def _to_float(text):
 def parse_binary(text):
     # The prompt asks the model to "End with one line exactly like: Probability: NN%",
     # but frontier models often drop the % or give a bare fraction (e.g.
-    # "Probability: 73" or "Probability: 0.73"). The old pattern required a literal
-    # "%", so those answers returned None and that run was silently discarded from
-    # the ensemble -- the same silent-drop failure that v0.1.4 fixed for multiple
-    # choice. Make the "%" optional (like parse_multiple_choice) and read the value:
-    # an explicit "%" or any value above 1 is a percentage (divide by 100); a bare
-    # value in [0, 1] is already a probability.
-    hits = re.findall(r"Probability\s*:\s*(" + _NUM + r")\s*(%?)", text, re.I)
+    # "Probability: 73" or "Probability: 0.73"), and very often bold the final line
+    # ("**Probability:** 73%" or "Probability: **73%**"). The old pattern required a
+    # literal "%" and a bare colon/number, so those answers returned None and that
+    # run was silently discarded from the ensemble -- the same silent-drop failure
+    # that v0.1.4 fixed for multiple choice. Make the "%" optional (v0.1.5) and
+    # tolerate markdown emphasis around the colon and number (v0.1.6). An explicit
+    # "%" or any value above 1 is a percentage (divide by 100); a bare value in
+    # [0, 1] is already a probability.
+    hits = re.findall(r"Probability" + _PROB_PAD + r":" + _PROB_PAD
+                      + r"(" + _NUM + r")\s*(%?)", text, re.I)
     if not hits:
         return None
     raw, pct = hits[-1]

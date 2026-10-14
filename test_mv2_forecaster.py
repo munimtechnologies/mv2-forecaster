@@ -51,6 +51,22 @@ class ParseTests(unittest.TestCase):
         # a bare value above 100 is still out of range -> None
         self.assertIsNone(mf.parse_binary("Probability: 173"))
 
+    def test_binary_emphasis_around_colon(self):
+        # Frontier models very often bold the final answer line. v0.1.5 required
+        # the colon and number to be bare, so "**Probability:** 73%" (colon inside
+        # the bold) and "Probability: **73%**" (only the number bolded) returned
+        # None and that whole run was silently dropped from the ensemble -- the
+        # binary twin of the multiple-choice bold-colon-inside drop fixed in
+        # v0.1.4. Markdown emphasis around the colon or number is now tolerated.
+        for text in ("**Probability:** 73%", "Probability: **73%**",
+                     "*Probability:* 73%", "**Probability**: 73%",
+                     "__Probability:__ 73", "see `Probability: 73%` above"):
+            self.assertAlmostEqual(mf.parse_binary(text), 0.73, msg=text)
+        # emphasis does not turn prose into a match: there is no number after the
+        # label here, and "Probability of X:" is not the answer line.
+        self.assertIsNone(mf.parse_binary("**Probability of success: high**"))
+        self.assertIsNone(mf.parse_binary("Probability of rain: later"))
+
     def test_multiple_choice(self):
         text = "Thinking...\n**Yes**: 50%\nYes, partially: 30%\nNo: 20%"
         got = mf.parse_multiple_choice(text, ["Yes", "Yes, partially", "No"])
