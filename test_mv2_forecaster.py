@@ -3,6 +3,7 @@
 Run from this folder with `python -m unittest -v`, or from anywhere with
 `python path/to/test_mv2_forecaster.py -v`.
 """
+import datetime as dt
 import io
 import os
 import sys
@@ -166,6 +167,63 @@ class ApiShapeTests(unittest.TestCase):
             {"id": "anthropic/claude-haiku-5", "created": 30},
         ]}
         self.assertEqual(mf.pick_models(listing), ["anthropic/claude-sonnet-5"])
+
+
+class ShouldForecastTests(unittest.TestCase):
+    """Spot-score refresh gate. 'now' is fixed so the arithmetic is exact."""
+    NOW = dt.datetime(2026, 11, 1, 12, 0, tzinfo=dt.timezone.utc)
+
+    def _q(self, close_in_h=None, last_forecast_h=None):
+        q = {}
+        if close_in_h is not None:
+            close = self.NOW + dt.timedelta(hours=close_in_h)
+            q["scheduled_close_time"] = close.isoformat().replace("+00:00", "Z")
+        if last_forecast_h is not None:
+            ts = (self.NOW - dt.timedelta(hours=last_forecast_h)).timestamp()
+            q["my_forecasts"] = {"latest": {"forecast_values": [0.3, 0.7], "start_time": ts}}
+        return q
+
+    def test_hours_helpers(self):
+        q = self._q(close_in_h=5, last_forecast_h=8)
+        self.assertAlmostEqual(mf.hours_until_close(q, self.NOW), 5, places=6)
+        self.assertAlmostEqual(mf.hours_since_last_forecast(q, self.NOW), 8, places=6)
+        self.assertIsNone(mf.hours_until_close({}, self.NOW))
+        self.assertIsNone(mf.hours_since_last_forecast({}, self.NOW))
+
+    def test_never_forecast_is_always_true(self):
+        self.assertTrue(mf.should_forecast({}, now=self.NOW))
+        # no prior forecast yet, even if closing in an hour
+        self.assertTrue(mf.should_forecast(self._q(close_in_h=1), now=self.NOW))
+
+    def test_refresh_when_closing_soon_and_stale(self):
+        self.assertTrue(mf.should_forecast(self._q(close_in_h=10, last_forecast_h=20), now=self.NOW))
+        # boundary: exactly at both thresholds still refreshes
+        self.assertTrue(mf.should_forecast(self._q(close_in_h=24, last_forecast_h=12), now=self.NOW))
+
+    def test_no_refresh_when_recent(self):
+        self.assertFalse(mf.should_forecast(self._q(close_in_h=10, last_forecast_h=2), now=self.NOW))
+
+    def test_no_refresh_when_far_from_close(self):
+        self.assertFalse(mf.should_forecast(self._q(close_in_h=100, last_forecast_h=50), now=self.NOW))
+
+    def test_no_refresh_after_close(self):
+        self.assertFalse(mf.should_forecast(self._q(close_in_h=-1, last_forecast_h=50), now=self.NOW))
+
+    def test_disabled_when_threshold_zero(self):
+        q = self._q(close_in_h=10, last_forecast_h=20)
+        self.assertFalse(mf.should_forecast(q, now=self.NOW, before_close_h=0))
+
+    def test_missing_close_time_falls_back_to_once(self):
+        # answered, but no close time known -> conservative: do not re-forecast
+        q = {"my_forecasts": {"latest": {"forecast_values": [0.3, 0.7],
+                                         "start_time": self.NOW.timestamp()}}}
+        self.assertFalse(mf.should_forecast(q, now=self.NOW))
+
+    def test_bad_timestamp_is_ignored(self):
+        q = self._q(close_in_h=5)
+        q["my_forecasts"] = {"latest": {"forecast_values": [0.3, 0.7], "start_time": "oops"}}
+        self.assertIsNone(mf.hours_since_last_forecast(q, self.NOW))
+        self.assertFalse(mf.should_forecast(q, now=self.NOW))
 
 
 def fake_llm(replies):

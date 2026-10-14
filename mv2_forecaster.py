@@ -10,6 +10,10 @@ Pipeline per question:
      mean CDF (numeric/discrete);
   5. post the forecast once, then the required private comment with reasoning.
 
+Spot peer scoring counts only a bot's last forecast before a question closes,
+so a question already answered is re-forecast once more when it is about to
+close and the earlier answer has gone stale (see should_forecast).
+
 Standard library only. Configuration is by environment variable:
   METACULUS_TOKEN   bot account token (required to post)
   LLM_API_KEY       key for the OpenAI-compatible endpoint (OPENROUTER_API_KEY also read)
@@ -19,6 +23,9 @@ Standard library only. Configuration is by environment variable:
   RESEARCH_MODEL    model used for research; default: first forecast model
   RUNS_PER_MODEL    default 2
   TOURNAMENTS       comma-separated ids or slugs; default 33121,minibench
+  REFRESH_BEFORE_CLOSE_H  re-forecast an answered question when it closes within this
+                          many hours; default 24. Set to 0 to disable re-forecasting.
+  MIN_FORECAST_AGE_H      ...but only if the last answer is at least this old; default 12.
 """
 import argparse
 import datetime as dt
@@ -32,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -49,6 +56,12 @@ CDF_OPEN_BOUND_MASS = 0.001
 CDF_MIN_STEP = 5e-5
 PERCENTILES = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]
 COMMENT_LIMIT = 9000
+
+# Spot peer scoring only counts the last forecast before a question closes, so a
+# question we have already answered is re-forecast once more near close, when the
+# earlier answer has aged. These are the defaults; main() reads env overrides.
+REFRESH_BEFORE_CLOSE_H = 24.0
+MIN_FORECAST_AGE_H = 12.0
 
 
 # --------------------------------------------------------------------- HTTP
@@ -97,6 +110,62 @@ def already_forecast(question):
         return question["my_forecasts"]["latest"]["forecast_values"] is not None
     except (KeyError, TypeError):
         return False
+
+
+def _parse_iso(s):
+    """Parse a Metaculus ISO timestamp to an aware UTC datetime, or None."""
+    if not s:
+        return None
+    try:
+        d = dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return d.replace(tzinfo=dt.timezone.utc) if d.tzinfo is None else d
+
+
+def hours_until_close(question, now=None):
+    """Hours from now until the question's scheduled close; None if unknown."""
+    close = _parse_iso(question.get("scheduled_close_time"))
+    if close is None:
+        return None
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return (close - now).total_seconds() / 3600.0
+
+
+def hours_since_last_forecast(question, now=None):
+    """Hours since our latest forecast (my_forecasts.latest.start_time is epoch
+    seconds); None if there is no forecast or no usable timestamp."""
+    try:
+        ts = question["my_forecasts"]["latest"]["start_time"]
+    except (KeyError, TypeError):
+        return None
+    try:
+        ts = float(ts)
+    except (TypeError, ValueError):
+        return None
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return (now.timestamp() - ts) / 3600.0
+
+
+def should_forecast(question, now=None, before_close_h=REFRESH_BEFORE_CLOSE_H,
+                    min_age_h=MIN_FORECAST_AGE_H):
+    """Whether to forecast this question now.
+
+    Always forecast a question never answered. For one already answered, only
+    re-forecast (a spot-score refresh) when it closes within before_close_h hours
+    AND the last answer is at least min_age_h hours old. Missing or unparseable
+    timing data falls back to the conservative 'forecast once' behavior, and
+    before_close_h <= 0 disables re-forecasting entirely.
+    """
+    if not already_forecast(question):
+        return True
+    if before_close_h <= 0:
+        return False
+    close_in = hours_until_close(question, now)
+    age = hours_since_last_forecast(question, now)
+    if close_in is None or age is None:
+        return False
+    return 0 < close_in <= before_close_h and age >= min_age_h
 
 
 def forecast_payload(question_id, qtype, value):
@@ -552,6 +621,13 @@ def resolve_models(cfg):
     return pick_models(listing)
 
 
+def _env_float(name, default):
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tournament", action="append", help="tournament id or slug (repeatable)")
@@ -566,7 +642,9 @@ def main(argv=None):
         print("METACULUS_TOKEN and LLM_API_KEY are not both set; nothing to do.")
         return 0
     cfg = {"base_url": os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
-           "api_key": api_key, "runs_per_model": int(os.environ.get("RUNS_PER_MODEL", "2"))}
+           "api_key": api_key, "runs_per_model": int(os.environ.get("RUNS_PER_MODEL", "2")),
+           "refresh_before_close_h": _env_float("REFRESH_BEFORE_CLOSE_H", REFRESH_BEFORE_CLOSE_H),
+           "min_forecast_age_h": _env_float("MIN_FORECAST_AGE_H", MIN_FORECAST_AGE_H)}
     tournaments = args.tournament or [
         t.strip() for t in (os.environ.get("TOURNAMENTS") or "").split(",") if t.strip()
     ] or DEFAULT_TOURNAMENTS
@@ -594,12 +672,17 @@ def main(argv=None):
             try:
                 detail = get_post(post["id"], token)
                 q = detail["question"]
-                if already_forecast(q) or q.get("type") not in FORECAST_TYPES:
+                if q.get("type") not in FORECAST_TYPES or not should_forecast(
+                        q, before_close_h=cfg["refresh_before_close_h"],
+                        min_age_h=cfg["min_forecast_age_h"]):
                     continue
-                print(f"- {q['id']} [{q['type']}] {q.get('title', '')[:90]}")
+                refresh = already_forecast(q)
+                print(f"- {q['id']} [{q['type']}] "
+                      f"{'(refresh) ' if refresh else ''}{q.get('title', '')[:90]}")
                 value, comment, record = forecast_question(q, models, research_model, cfg)
                 record["post_id"] = post["id"]
                 record["tournament"] = tournament
+                record["refresh"] = refresh
                 if not args.dry_run:
                     post_forecast(q["id"], q["type"], value, token)
                     for attempt in range(2):
