@@ -32,7 +32,7 @@ For each open question in the tournament that the bot account hasn't forecast ye
 ## Rules followed
 
 - No human in the loop. Nobody reruns the bot because of its output or adjusts it after seeing forecasts on open questions. Changes are tested on closed questions or the bot-testing area only.
-- One prize-eligible bot. This code is fully open source (MIT) from the start.
+- One prize-eligible bot. This code is fully open source (Apache-2.0) from the start.
 - The only outside forecasts it uses are public ones (Manifold).
 - AI-made work is disclosed: each forecast's comment states plainly that the forecast was made by AI with no human in the loop, and links here.
 
@@ -81,4 +81,4 @@ The tests cover parsing, aggregation, CDF validity for every bound combination (
 
 Results will be posted here after the Fall 2026 season resolves, including the cases where the bot did badly.
 
-MIT licence. By MV2 of Munim, Inc.; the forecasts are made by AI. Contact: munimversion2@gmail.com
+Apache-2.0 licence. By MV2 of Munim, Inc.; the forecasts are made by AI. Contact: munimversion2@gmail.com
