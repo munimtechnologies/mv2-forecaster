@@ -39,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -56,6 +56,19 @@ CDF_OPEN_BOUND_MASS = 0.001
 CDF_MIN_STEP = 5e-5
 PERCENTILES = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]
 COMMENT_LIMIT = 9000
+
+# Metaculus's spam filter deactivates accounts over links (2026-10-14: two links
+# in a bio took down the owner's account), so a posted comment carries none:
+# not our own repo, and not the URLs the research model cites.
+LINK_RE = re.compile(r"\[([^\]]*)\]\((?:https?://|www\.)[^)]*\)"
+                     r"|(?:https?://|www\.)\S+"
+                     r"|\b[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|ai|gov|edu|co|uk|news|info|dev|app)\b(?:/\S*)?",
+                     re.IGNORECASE)
+
+
+def strip_links(text):
+    """Drop every URL and bare domain; keep a markdown link's label."""
+    return LINK_RE.sub(lambda m: m.group(1) or "[link removed]", text or "")
 
 # Spot peer scoring only counts the last forecast before a question closes, so a
 # question we have already answered is re-forecast once more near close, when the
@@ -583,12 +596,12 @@ def forecast_question(q, models, research_model, cfg, llm=llm_chat, markets_fn=m
         shown = "median ~ " + median_text(final, q)
         each = f"{len(parsed)} runs"
 
-    comment = (f"MV2 forecaster {__version__}, an open-source bot by MV2 of Munim, Inc. "
-               f"This forecast was made entirely by AI, with no human in the loop. "
-               f"Code: https://github.com/munimtechnologies/mv2-forecaster\n\n"
-               f"Aggregate: {shown}\nRuns: {each}\n\n"
-               f"Research summary:\n{research[:2500] or 'none'}\n\n"
-               f"Reasoning from {rationales[0][0]}:\n{rationales[0][1][:4000]}")
+    comment = strip_links(
+        f"MV2 forecaster {__version__}, open source, by MV2 of Munim, Inc. "
+        f"This forecast was made entirely by AI, with no human in the loop.\n\n"
+        f"Aggregate: {shown}\nRuns: {each}\n\n"
+        f"Research summary:\n{strip_links(research)[:2500] or 'none'}\n\n"
+        f"Reasoning from {rationales[0][0]}:\n{strip_links(rationales[0][1])[:4000]}")
     record = {"question_id": q.get("id"), "title": q.get("title"), "type": qtype, "today": today,
               "models": models, "runs": [[m, v] for m, v in parsed], "final": final,
               "markets": markets, "version": __version__}

@@ -246,6 +246,22 @@ class ForecastQuestionTests(unittest.TestCase):
         self.assertIn("no human in the loop", comment)
         self.assertEqual(len(record["runs"]), 2)
 
+    def test_comment_has_no_links(self):
+        q = {"id": 1, "title": "Will X happen?", "type": "binary"}
+
+        def llm(model, prompt, base, key, temperature=0.4, web=False):
+            if web:
+                return ("Per [Reuters](https://www.reuters.com/x) and www.bbc.co.uk/news, "
+                        "see http://example.org/a?b=1 or apnews.com/article/9.")
+            return "Source: https://foo.io/bar\nProbability: 40%"
+
+        _, comment, _ = mf.forecast_question(q, ["a"], "a", self.cfg, llm, lambda t: [])
+        for bad in ("http", "www.", "reuters.com", "bbc.co", "example.org", "apnews.com",
+                    "foo.io", "github"):
+            self.assertNotIn(bad, comment)
+        self.assertIn("Per Reuters", comment)
+        self.assertIn("no human in the loop", comment)
+
     def test_multiple_choice(self):
         q = {"id": 2, "title": "Which?", "type": "multiple_choice", "options": ["A", "B", "C"]}
         llm = fake_llm({"a": "A: 50%\nB: 30%\nC: 20%"})
