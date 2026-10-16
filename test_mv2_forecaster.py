@@ -119,6 +119,42 @@ class ParseTests(unittest.TestCase):
             self.assertAlmostEqual(got["Option B"], 0.7, places=6, msg=label)
             self.assertAlmostEqual(sum(got.values()), 1.0, places=6, msg=label)
 
+    def test_multiple_choice_equals_separator(self):
+        # MV2's forecast-answer-formats benchmark found v0.1.8 silently dropped a
+        # multiple-choice answer written with "=" ("Option A = 30%"), the twin of
+        # the binary "Probability = 73%" drop fixed in v0.1.8. v0.1.9 accepts "="
+        # as well as ":" after each option name.
+        opts = ["Option A", "Option B"]
+        for label, text in (
+            ("equals_separator", "Option A = 30%\nOption B = 70%"),
+            ("no_space", "Option A=30\nOption B=70"),
+            ("decimal", "Option A = 0.30\nOption B = 0.70"),
+            ("bold_label", "**Option A** = 30%\n**Option B** = 70%"),
+            ("numbered", "1. Option A = 30%\n2. Option B = 70%"),
+            ("mixed", "Option A: 30%\nOption B = 70%"),
+            ("last_block_wins", "Option A: 10%\nOption B: 90%\nRevised:\nOption A = 30%\nOption B = 70%"),
+        ):
+            got = mf.parse_multiple_choice(text, opts)
+            self.assertIsNotNone(got, label)
+            self.assertAlmostEqual(got["Option A"], 0.3, places=6, msg=label)
+            self.assertAlmostEqual(got["Option B"], 0.7, places=6, msg=label)
+        # a shorter option name still does not steal a longer one's line
+        got = mf.parse_multiple_choice("Yes = 50%\nYes, partially = 30%\nNo = 20%",
+                                       ["Yes", "Yes, partially", "No"])
+        self.assertAlmostEqual(got["Yes"], 0.5)
+        self.assertAlmostEqual(got["Yes, partially"], 0.3)
+        # Still rejected on purpose: a pipe table is how a reference/base-rate
+        # table is written (the benchmark's false-positive trap for a
+        # pipe-accepting extractor), a parenthesis is not a separator, an option
+        # with no number is not an answer, and one missing option drops the whole
+        # answer.
+        trap = ("For reference, here are last year's frequencies, which are NOT my forecast:\n"
+                "Option A | 12\nOption B | 88\nI do not have enough information to forecast this.")
+        self.assertIsNone(mf.parse_multiple_choice(trap, opts))
+        self.assertIsNone(mf.parse_multiple_choice("Option A (30%)\nOption B (70%)", opts))
+        self.assertIsNone(mf.parse_multiple_choice("Option A = the incumbent\nOption B = 70%", opts))
+        self.assertIsNone(mf.parse_multiple_choice("Option A = 30%", opts))
+
     def test_percentiles(self):
         got = mf.parse_percentiles("Percentile 10: 1,200\nPercentile 50: $3,500.5\npercentile 90: 1e4")
         self.assertEqual(got, {10: 1200.0, 50: 3500.5, 90: 10000.0})
@@ -140,6 +176,16 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(mf.parse_percentiles(bold_dollar), {10: 1200.0, 50: 3500.0, 90: 9000.0})
         # emphasis does not turn prose into a match: no numeric value follows.
         self.assertIsNone(mf.parse_percentiles("**Percentile estimates below:**\nsee the table"))
+
+    def test_percentiles_ordinal_order_stays_unread(self):
+        # The benchmark's numeric leg shows "50th percentile: 250" is also how a
+        # quoted base-rate block is written; reading that word order would turn
+        # its declined-answer case into a spurious forecast. Kept a non-match on
+        # purpose (see parse_percentiles).
+        trap = ("Looking at base rates for this kind of event:\n10th percentile: 2\n"
+                "50th percentile: 5\n90th percentile: 11\n"
+                "Those are last year's figures; I cannot give calibrated percentiles for this year.")
+        self.assertIsNone(mf.parse_percentiles(trap))
 
 
 class AggregateTests(unittest.TestCase):

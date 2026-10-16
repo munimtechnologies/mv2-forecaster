@@ -39,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -397,10 +397,18 @@ def parse_binary(text):
 
 
 def parse_multiple_choice(text, options):
+    # Each option must start a line with its exact name, then a separator, then a
+    # number; if any option is missing the whole answer is dropped. The separator
+    # is ":" or "=" (v0.1.9): the forecast-answer-formats benchmark found v0.1.8
+    # silently dropped "Option A = 30%", the multiple-choice twin of the binary
+    # "Probability = 73%" drop fixed in v0.1.8. A pipe ("Option A | 30") and a
+    # parenthesis ("Option A (30%)") are intentionally NOT separators: a pipe is
+    # how a reference or base-rate table is written, and reading one is the false
+    # positive the benchmark measured for a pipe-accepting extractor.
     probs = {}
     for opt in options:
         pat = (r"^" + _MC_PAD + _MC_LIST + re.escape(str(opt))
-               + _MC_PAD + r":" + _MC_PAD + r"(" + _NUM + r")\s*%?")
+               + _MC_PAD + r"[:=]" + _MC_PAD + r"(" + _NUM + r")\s*%?")
         hits = re.findall(pat, text, re.I | re.M)
         if not hits:
             return None
@@ -420,7 +428,11 @@ def parse_percentiles(text):
     # -- the numeric twin of the binary (v0.1.5/0.1.6) and multiple-choice (v0.1.4)
     # silent-drop fixes. Tolerate markdown emphasis (* _ ~ `) around the index, colon
     # and number (v0.1.7); the pattern is a strict superset of the old one, and _NUM
-    # excludes letters so prose is still not matched.
+    # excludes letters so prose is still not matched. The "50th percentile: 1200"
+    # word order is deliberately NOT read: in the forecast-answer-formats benchmark it
+    # is also how a quoted base-rate block is written, so reading it would turn a
+    # declined answer into a spurious forecast (a correct reject becomes a false
+    # positive) -- the label order the prompt asks for is what keeps that block out.
     found = {}
     pat = (r"Percentile" + _PROB_PAD + r"(\d+)" + _PROB_PAD + r":"
            + _PROB_PAD + r"\$?(" + _NUM + r")")
