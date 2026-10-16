@@ -39,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 
 METACULUS_API = "https://www.metaculus.com/api"
 FALL_2026_FUTUREEVAL_ID = 33121
@@ -369,15 +369,23 @@ def _to_float(text):
 def parse_binary(text):
     # The prompt asks the model to "End with one line exactly like: Probability: NN%",
     # but frontier models often drop the % or give a bare fraction (e.g.
-    # "Probability: 73" or "Probability: 0.73"), and very often bold the final line
-    # ("**Probability:** 73%" or "Probability: **73%**"). The old pattern required a
-    # literal "%" and a bare colon/number, so those answers returned None and that
-    # run was silently discarded from the ensemble -- the same silent-drop failure
-    # that v0.1.4 fixed for multiple choice. Make the "%" optional (v0.1.5) and
-    # tolerate markdown emphasis around the colon and number (v0.1.6). An explicit
-    # "%" or any value above 1 is a percentage (divide by 100); a bare value in
-    # [0, 1] is already a probability.
-    hits = re.findall(r"Probability" + _PROB_PAD + r":" + _PROB_PAD
+    # "Probability: 73" or "Probability: 0.73"), very often bold the final line
+    # ("**Probability:** 73%" or "Probability: **73%**"), and sometimes separate the
+    # label from the number with "=" instead of ":" ("Probability = 73%"). The old
+    # pattern required a literal "%" and a bare colon/number, so those answers
+    # returned None and that run was silently discarded from the ensemble -- the
+    # same silent-drop failure that v0.1.4 fixed for multiple choice. Make the "%"
+    # optional (v0.1.5), tolerate markdown emphasis around the colon and number
+    # (v0.1.6), and accept "=" as well as ":" as the label separator (v0.1.8, after
+    # the forecast-answer-formats benchmark found v0.1.7 silently dropped
+    # "Probability = 73%"). The label stays mandatory and the separator is a single
+    # required ":" or "=", so the zero-false-positive property holds: a trailing base
+    # rate or a bare prose percentage is still not read. Prose separators such as
+    # "probability is 73%" are intentionally NOT matched -- accepting them is exactly
+    # what gives a %-anywhere extractor its false positives on reasoning text. An
+    # explicit "%" or any value above 1 is a percentage (divide by 100); a bare value
+    # in [0, 1] is already a probability.
+    hits = re.findall(r"Probability" + _PROB_PAD + r"[:=]" + _PROB_PAD
                       + r"(" + _NUM + r")\s*(%?)", text, re.I)
     if not hits:
         return None

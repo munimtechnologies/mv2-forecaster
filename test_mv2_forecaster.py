@@ -67,6 +67,29 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(mf.parse_binary("**Probability of success: high**"))
         self.assertIsNone(mf.parse_binary("Probability of rain: later"))
 
+    def test_binary_equals_separator(self):
+        # Frontier models sometimes write the final answer with an equals sign
+        # instead of a colon ("Probability = 73%"). v0.1.7 required a literal
+        # colon, so that whole run was silently dropped; MV2's own
+        # forecast-answer-formats benchmark flagged it as one of mv2's two misses.
+        # v0.1.8 accepts "=" as well as ":" as the label separator.
+        self.assertAlmostEqual(mf.parse_binary("Probability = 73%"), 0.73)
+        self.assertAlmostEqual(mf.parse_binary("Probability=73%"), 0.73)
+        self.assertAlmostEqual(mf.parse_binary("**Probability** = 73%"), 0.73)
+        self.assertAlmostEqual(mf.parse_binary("Probability = 0.73"), 0.73)
+        self.assertAlmostEqual(mf.parse_binary("Probability = 73"), 0.73)
+        # the equals form still takes the last match and respects the range gate
+        self.assertAlmostEqual(mf.parse_binary("Probability = 5%\nProbability: 42%"), 0.42)
+        self.assertIsNone(mf.parse_binary("Probability = 173"))
+        # Prose separators stay unmatched on purpose: accepting them is exactly
+        # what gives a %-anywhere extractor its false positives on reasoning text,
+        # so mv2 keeps its zero-false-positive property by design (the other mv2
+        # miss the benchmark found, "My probability is 73%", is intentionally left
+        # a non-match rather than risk reading base rates from prose).
+        self.assertIsNone(mf.parse_binary("My probability is 73%."))
+        self.assertIsNone(mf.parse_binary("Historically about a 5% base rate, nothing else."))
+        self.assertIsNone(mf.parse_binary("There is a 20% chance of rain and a 30% chance of snow."))
+
     def test_multiple_choice(self):
         text = "Thinking...\n**Yes**: 50%\nYes, partially: 30%\nNo: 20%"
         got = mf.parse_multiple_choice(text, ["Yes", "Yes, partially", "No"])
